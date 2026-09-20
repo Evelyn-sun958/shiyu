@@ -2,6 +2,13 @@
 
 长按说话，AI 自动生成时间轴。记录每一天，看见你的时间。
 
+## 在线地址
+
+- **国内直连（推荐）**：https://shiyu-qpcb4nmw.edgeone.cool
+- 国际备用：https://evelyn-sun958.github.io/shiyu/
+
+两个地址内容完全相同，数据各自独立（认准一个用）。
+
 ## 使用方法
 
 1. **打开链接**（手机浏览器推荐 Safari / Chrome）
