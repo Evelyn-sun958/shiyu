@@ -1257,6 +1257,8 @@
         let recognition = null;
         let apiKey = localStorage.getItem('deepseek_api_key') || '';
         let wantStop = false;
+        let isHolding = false;
+        let stopSafetyTimer = null;
         let holdForText = false;
         let finalTranscript = '';
         let lastInterim = '';
@@ -1566,8 +1568,12 @@
             recognition.lang = 'zh-CN';
             
             recognition.onstart = function() {
+                // 手指已松开却残留的异步启动完成：立即自灭，绝不再进入聆听（安卓关键修复）
+                if (!isHolding || wantStop) {
+                    try { recognition.abort(); } catch (e) {}
+                    return;
+                }
                 isRecording = true;
-                wantStop = false;
                 document.getElementById('mic-btn').classList.add('recording');
                 document.getElementById('recognition-status').style.display = 'block';
                 document.getElementById('recognition-status').textContent = '🎙️ 正在聆听…松开结束';
@@ -1595,7 +1601,9 @@
                     showToast('当前环境不允许使用麦克风（需HTTPS或localhost），已切换为文字输入', 'warning');
                     stopRecording();
                     openTextInput();
-                } else if (isRecording && !wantStop) {
+                } else if (wantStop || event.error === 'aborted' || event.error === 'no-speech') {
+                    // 停止过程中的正常现象：静默处理，等待 onend 收尾
+                } else if (isRecording) {
                     // 瞬时错误（静音超时/网络抖动等）：不中断录音，等待 onend 自动恢复
                 } else {
                     showToast('语音识别失败，请重试或使用文字输入', 'error');
@@ -1604,10 +1612,26 @@
             };
 
             recognition.onend = function() {
-                // 按住期间意外中断（如静音超时）→ 自动恢复，继续聆听
-                if (isRecording && !wantStop) {
+                // 按住期间意外中断（如安卓静音自动断开）→ 自动恢复，继续聆听
+                if (isHolding && isRecording && !wantStop) {
+                    // 重启会重置识别流，先把尚未定稿的尾词归档，避免断句瞬间丢词
+                    const tailKeep = (lastInterim || '').trim();
+                    if (tailKeep && !finalTranscript.includes(tailKeep)) {
+                        finalTranscript += (finalTranscript ? ' ' : '') + tailKeep;
+                    }
                     lastInterim = '';
-                    try { recognition.start(); return; } catch (e) { /* 无法恢复则结束 */ }
+                    try {
+                        recognition.start();
+                        return;
+                    } catch (e) {
+                        // 启动未就绪：稍后重试一次（期间松开则由 wantStop 拦截，不再重启）
+                        setTimeout(() => {
+                            if (isHolding && isRecording && !wantStop) {
+                                try { recognition.start(); } catch (e2) { /* 放弃恢复 */ }
+                            }
+                        }, 250);
+                        return;
+                    }
                 }
                 const deliberate = wantStop;
                 stopRecording();
@@ -1639,6 +1663,7 @@
             }
             if (isRecording) {
                 wantStop = true;
+                isHolding = false;
                 recognition.stop();
                 return;
             }
@@ -1647,6 +1672,7 @@
                 if (!recognition) return;
             }
             finalTranscript = '';
+            isHolding = true;
             try {
                 recognition.start();
             } catch (error) {
@@ -1672,14 +1698,21 @@
                 }
             }
             finalTranscript = '';
+            isHolding = true;
             try {
                 recognition.start();
             } catch (error) {
                 console.error('启动语音识别失败:', error);
+                setTimeout(() => {
+                    if (isHolding && !isRecording && recognition) {
+                        try { recognition.start(); } catch (e) {}
+                    }
+                }, 250);
             }
         }
         
         function endHold() {
+            isHolding = false;
             if (holdForText) {
                 holdForText = false;
                 openTextInput();
@@ -1687,18 +1720,30 @@
             }
             if (recognition && isRecording) {
                 wantStop = true;
-                try {
-                    recognition.stop();
-                } catch (e) {
-                    // 在自动恢复的间隙中松开：直接按已识别的内容结束，避免整段丢失
+                let stopped = false;
+                try { recognition.stop(); stopped = true; } catch (e) {}
+                if (!stopped) {
+                    // 在自动恢复的启动间隙中松开：先尝试终止残留的异步启动
+                    try { recognition.abort(); stopped = true; } catch (e) {}
+                }
+                // 兜底：若 1 秒内 onend 仍未触发（安卓偶发不回调），强制按已识别内容结束
+                clearTimeout(stopSafetyTimer);
+                stopSafetyTimer = setTimeout(() => {
+                    if (wantStop && recognition) {
+                        try { recognition.abort(); } catch (e) {}
+                        recognition.onend();
+                    }
+                }, 1000);
+                if (!stopped) {
                     recognition.onend();
                 }
             }
         }
-        
+
         function stopRecording() {
             isRecording = false;
             wantStop = false;
+            clearTimeout(stopSafetyTimer);
             document.getElementById('mic-btn').classList.remove('recording');
             document.getElementById('recognition-status').style.display = 'none';
         }
