@@ -4,10 +4,9 @@
 
 ## 在线地址
 
-- **国内直连（推荐）**：https://shiyu-qpcb4nmw.edgeone.cool
-- 国际备用：https://evelyn-sun958.github.io/shiyu/
+**https://evelyn-sun958.github.io/shiyu/**
 
-两个地址内容完全相同，数据各自独立（认准一个用）。
+（大陆访问 github.io 偶尔会时快时慢；如果彻底打不开，等几分钟再试或换个网络。若长期不稳定，可升级为腾讯云 COS 国内直连方案。）
 
 ## 使用方法
 
